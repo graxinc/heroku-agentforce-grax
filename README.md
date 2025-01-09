@@ -21,7 +21,7 @@ AWS_WORKGROUP=primary    # Athena workgroup (default: primary)
 OPENAI_API_KEY=          # Your OpenAI API key for GPT-4 access
 
 # Optional
-PORT=5000                # Server port (default: 5000)
+PORT=5001                # Server port (default: 5001)
 ```
 
 ### Installation
@@ -37,3 +37,16 @@ pip install -r requirements.txt
 ```bash
 python app.py
 ```
+
+### Usage Example
+
+You can query the API using curl:
+
+```bash
+curl -X POST http://localhost:5001/query \
+  -H "Content-Type: application/json" \
+  -u heroku:agent \
+  -d '{"query": "Show me the top 5 accounts by revenue"}'
+```
+
+The API will return a JSON response containing the query results and any relevant explanations.
