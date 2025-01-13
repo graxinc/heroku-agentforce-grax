@@ -51,6 +51,6 @@ def sql_connection():
 SQL_CONNECTION = sql_connection()
 def query(query):
     try:
-        return pd.read_sql_query(query, SQL_CONNECTION, timeout=30)  # 30 second timeout
+        return pd.read_sql_query(query, SQL_CONNECTION)
     except Exception as e:
         raise Exception(f"Query execution failed: {str(e)}")

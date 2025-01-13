@@ -154,15 +154,15 @@ class Process(Resource):
 
         try:
             # Create and use the agent
-            openai_api_key = os.getenv('OPENAI_API_KEY')
-            if not openai_api_key:
-                logger.error("OPENAI_API_KEY environment variable is not set")
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                logger.error("API_KEY environment variable is not set")
                 return make_response(
-                    jsonify({"error": "OpenAI API key not configured"}),
+                    jsonify({"error": "API key not configured"}),
                     500
                 )
 
-            agent = create_agent(openai_api_key)
+            agent = create_agent(api_key)
             message = query_agent(agent, agent_request.query)
 
         except Exception as e:

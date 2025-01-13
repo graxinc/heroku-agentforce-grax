@@ -12,3 +12,5 @@ sqlalchemy>=2.0.0
 langchain-community
 python-dotenv>=1.0.0
 langchain-openai
+anthropic
+langchain-anthropic
