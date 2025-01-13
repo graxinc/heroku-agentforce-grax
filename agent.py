@@ -55,37 +55,74 @@ class LoggingCallbackHandler(BaseCallbackHandler):
     def __init__(self):
         self.logs = []
 
+    def _format_content(self, content: Any) -> str:
+        """Format content to ensure it's JSON serializable"""
+        if hasattr(content, 'to_json'):
+            return content.to_json()
+        if hasattr(content, 'to_dict'):
+            return content.to_dict()
+        if isinstance(content, (list, tuple)):
+            return [self._format_content(item) for item in content]
+        if isinstance(content, dict):
+            return {k: self._format_content(v) for k, v in content.items()}
+        return str(content)
+
     def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
         print(f"\n🤔 LLM is thinking about: {prompts}")
-        self.logs.append(("llm_start", prompts))
+        self.logs.append({
+            "type": "llm_start",
+            "content": self._format_content(prompts)
+        })
 
     def on_llm_end(self, response, **kwargs: Any) -> None:
         print(f"\n💭 LLM responded: {response}")
-        self.logs.append(("llm_end", response))
+        self.logs.append({
+            "type": "llm_end",
+            "content": self._format_content(response)
+        })
 
     def on_tool_start(self, serialized: Dict[str, Any], input_str: str, **kwargs: Any) -> None:
         print(f"\n🔧 Using tool {serialized.get('name', 'unknown')} with input: {input_str}")
-        self.logs.append(("tool_start", input_str))
+        self.logs.append({
+            "type": "tool_start",
+            "tool": serialized.get('name', 'unknown'),
+            "content": self._format_content(input_str)
+        })
 
     def on_tool_end(self, output: str, **kwargs: Any) -> None:
         print(f"\n📊 Tool output: {output}")
-        self.logs.append(("tool_end", output))
+        self.logs.append({
+            "type": "tool_end",
+            "content": self._format_content(output)
+        })
 
     def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
         print(f"\n⛓️ Starting chain with: {inputs}")
-        self.logs.append(("chain_start", inputs))
+        self.logs.append({
+            "type": "chain_start",
+            "content": self._format_content(inputs)
+        })
 
     def on_chain_end(self, outputs: Dict[str, Any], **kwargs: Any) -> None:
         print(f"\n🔗 Chain finished with: {outputs}")
-        self.logs.append(("chain_end", outputs))
+        self.logs.append({
+            "type": "chain_end",
+            "content": self._format_content(outputs)
+        })
 
     def on_agent_action(self, action, **kwargs: Any) -> Any:
         print(f"\n🤖 Agent action: {action}")
-        self.logs.append(("agent_action", action))
+        self.logs.append({
+            "type": "agent_action",
+            "content": self._format_content(action)
+        })
 
     def on_agent_finish(self, finish, **kwargs: Any) -> Any:
         print(f"\n✅ Agent finished: {finish}")
-        self.logs.append(("agent_finish", finish))
+        self.logs.append({
+            "type": "agent_finish",
+            "content": self._format_content(finish)
+        })
 
 def create_agent(api_key: str):
     """
@@ -134,7 +171,7 @@ def create_agent(api_key: str):
 
     return agent
 
-def query_agent(agent, query: str) -> str:
+def query_agent(agent, query: str) -> tuple[str, list]:
     """
     Use the agent to process a natural language query and get results from the data lake
 
@@ -143,15 +180,12 @@ def query_agent(agent, query: str) -> str:
         query: Natural language query string
 
     Returns:
-        str: Response from the agent
+        tuple[str, list]: (response, logs) where logs is a list of tuples (log_type, content)
     """
     try:
         callback = LoggingCallbackHandler()
         response = agent.run(query, callbacks=[callback])
-        print("\n📝 Full interaction log:")
-        for log_type, log_content in callback.logs:
-            print(f"{log_type}: {log_content}")
-        return response
+        return response, callback.logs
     except Exception as e:
         print(f"\n❌ Error: {str(e)}")
-        return f"Error processing query: {str(e)}"
+        return f"Error processing query: {str(e)}", []

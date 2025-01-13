@@ -19,3 +19,4 @@ flask-sqlalchemy
 requests
 oauthlib
 pyOpenSSL
+psycopg2-binary  # PostgreSQL adapter

@@ -15,11 +15,14 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, jsonify, request, make_response
+from flask import Flask, jsonify, request, make_response, render_template
 from flask_httpauth import HTTPBasicAuth
 from flask_restx import Api, Resource, fields
 from werkzeug.security import generate_password_hash, check_password_hash
 from agent import create_agent, query_agent
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
+from models import Base, Interaction
 
 app = Flask(__name__)
 api = Api(app,
@@ -100,6 +103,12 @@ agent_response_model = api.model('AgentResponse', {
     )
 })
 
+# Database setup
+db_url = os.environ.get("DATABASE_URL")
+engine = create_engine(db_url)
+db_session = scoped_session(sessionmaker(bind=engine))
+Base.metadata.create_all(bind=engine)
+
 @api.route('/query')
 class Process(Resource):
     """
@@ -115,36 +124,70 @@ class Process(Resource):
         """
         data = request.json
         if not data or 'query' not in data:
-            response = make_response(jsonify({"error": "Invalid request, 'query' field is required"}))
-            response.status_code = 400
-            response.headers['Content-Type'] = 'application/json'
-            return response
-
-        agent_request = AgentRequest(data['query'])
-        logger.info("Received query: %s", agent_request.query)
+            return make_response(jsonify({"error": "Invalid request"}), 400)
 
         try:
-            api_key = os.getenv('ANTHROPIC_API_KEY')
-            if not api_key:
-                logger.error("API_KEY environment variable is not set")
-                return make_response(
-                    jsonify({"error": "API key not configured"}),
-                    500
-                )
+            agent = create_agent(os.getenv('ANTHROPIC_API_KEY'))
+            message, logs = query_agent(agent, data['query'])
 
-            agent = create_agent(api_key)
-            message = query_agent(agent, agent_request.query)
-
-        except Exception as e:
-            logger.error("Error running query: %s", str(e))
-            return make_response(
-                jsonify({"error": f"Error running query: {str(e)}"}),
-                500
+            # Save the interaction
+            interaction = Interaction(
+                query=data['query'],
+                response=message,
+                logs=logs
             )
+            db_session.add(interaction)
+            db_session.commit()
 
-        agent_response = AgentResponse(message)
-        logger.info("Result is: %s", agent_response)
-        return agent_response.to_dict()
+            return AgentResponse(message).to_dict()
+        except Exception as e:
+            logger.error("Error: %s", str(e))
+            return make_response(jsonify({"error": str(e)}), 500)
+
+@app.route('/demo')
+def demo():
+    """Demo page showing a canned agent interaction"""
+    try:
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return "Error: API key not configured", 500
+
+        agent = create_agent(api_key)
+        demo_query = "Show me the top 5 accounts by revenue"
+        message, logs = query_agent(agent, demo_query)
+
+        return render_template('dashboard.html',
+                             query=demo_query,
+                             response=message,
+                             logs=logs)
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+
+# Add list view
+@app.route('/interactions')
+@auth.login_required
+def list_interactions():
+    interactions = db_session.query(Interaction)\
+        .order_by(Interaction.created_at.desc())\
+        .all()
+    return render_template('list.html', interactions=interactions)
+
+# Add detail view
+@app.route('/interactions/<int:id>')
+@auth.login_required
+def view_interaction(id):
+    interaction = db_session.query(Interaction).get(id)
+    if not interaction:
+        return "Not found", 404
+    return render_template('dashboard.html',
+                         query=interaction.query,
+                         response=interaction.response,
+                         logs=interaction.logs)
+
+# Cleanup
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db_session.remove()
 
 if __name__ == '__main__':
     """

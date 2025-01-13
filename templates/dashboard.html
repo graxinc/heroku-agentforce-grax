@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Agent Demo</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .log-entry {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            background-color: #f8fafc;
+        }
+        .log-type {
+            font-weight: 600;
+            color: #4f46e5;
+            margin-bottom: 0.25rem;
+        }
+        .log-content {
+            white-space: pre-wrap;
+            font-family: ui-monospace, monospace;
+            font-size: 0.875rem;
+            color: #374151;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8">Agent Demo</h1>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="space-y-4">
+                <div class="bg-gray-50 p-4 rounded">
+                    <p class="font-medium">Query:</p>
+                    <p>{{ query }}</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded">
+                    <p class="font-medium">Final Response:</p>
+                    <pre class="whitespace-pre-wrap text-sm">{{ response }}</pre>
+                </div>
+                <div class="bg-gray-50 p-4 rounded">
+                    <p class="font-medium mb-4">Agent Thought Process:</p>
+                    <div class="space-y-2">
+                    {% for log in logs %}
+                        <div class="log-entry">
+                            <div class="log-type">
+                                {% if log.type == 'llm_start' %}🤔 Thinking...
+                                {% elif log.type == 'llm_end' %}💭 Response
+                                {% elif log.type == 'tool_start' %}🔧 Using Tool
+                                {% elif log.type == 'tool_end' %}📊 Tool Result
+                                {% elif log.type == 'chain_start' %}⛓️ Starting Chain
+                                {% elif log.type == 'chain_end' %}🔗 Chain Complete
+                                {% elif log.type == 'agent_action' %}🤖 Taking Action
+                                {% elif log.type == 'agent_finish' %}✅ Finished
+                                {% else %}{{ log.type }}
+                                {% endif %}
+                            </div>
+                            <div class="log-content">{{ log.content }}</div>
+                        </div>
+                    {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

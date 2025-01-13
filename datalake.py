@@ -17,13 +17,6 @@ conn_str = (
     "{schema_name}?s3_staging_dir={s3_staging_dir}&work_group={work_group}"
 )
 
-print(AWS_ACCESS_KEY)
-print(AWS_SECRET_KEY)
-print(AWS_REGION)
-print(SCHEMA_NAME)
-print(AWS_WORKGROUP)
-print(S3_STAGING_DIR)
-
 connection_string = conn_str.format(
     aws_access_key_id=quote_plus(AWS_ACCESS_KEY),
     aws_secret_access_key=quote_plus(AWS_SECRET_KEY),
@@ -32,8 +25,6 @@ connection_string = conn_str.format(
     work_group=AWS_WORKGROUP,
     s3_staging_dir=quote_plus(S3_STAGING_DIR),
 )
-
-print(connection_string)
 
 def sql_connection():
     if not connection_string:

@@ -29,7 +29,7 @@ GOOGLE_CLIENT_SECRET=    # Google OAuth client secret
 SECRET_KEY=             # Flask secret key for sessions
 
 # Database
-DATABASE_URL=           # Database URL (default: sqlite:///app.db)
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 ```
 
 ### Installation
