@@ -2,9 +2,10 @@ from langchain.agents import initialize_agent, Tool
 from langchain.agents import AgentType
 from langchain_anthropic import ChatAnthropic
 from langchain.tools import BaseTool
-from typing import Optional, Type, Any
+from typing import Optional, Type, Any, Dict, List
 import pandas as pd
 from datalake import query
+from langchain.callbacks.base import BaseCallbackHandler
 
 class DataLakeQueryTool(BaseTool):
     name: str = "datalake_query"
@@ -49,6 +50,42 @@ class DataLakeQueryTool(BaseTool):
 
     def _arun(self, query: str) -> str:
         raise NotImplementedError("Async not implemented")
+
+class LoggingCallbackHandler(BaseCallbackHandler):
+    def __init__(self):
+        self.logs = []
+
+    def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
+        print(f"\n🤔 LLM is thinking about: {prompts}")
+        self.logs.append(("llm_start", prompts))
+
+    def on_llm_end(self, response, **kwargs: Any) -> None:
+        print(f"\n💭 LLM responded: {response}")
+        self.logs.append(("llm_end", response))
+
+    def on_tool_start(self, serialized: Dict[str, Any], input_str: str, **kwargs: Any) -> None:
+        print(f"\n🔧 Using tool {serialized.get('name', 'unknown')} with input: {input_str}")
+        self.logs.append(("tool_start", input_str))
+
+    def on_tool_end(self, output: str, **kwargs: Any) -> None:
+        print(f"\n📊 Tool output: {output}")
+        self.logs.append(("tool_end", output))
+
+    def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
+        print(f"\n⛓️ Starting chain with: {inputs}")
+        self.logs.append(("chain_start", inputs))
+
+    def on_chain_end(self, outputs: Dict[str, Any], **kwargs: Any) -> None:
+        print(f"\n🔗 Chain finished with: {outputs}")
+        self.logs.append(("chain_end", outputs))
+
+    def on_agent_action(self, action, **kwargs: Any) -> Any:
+        print(f"\n🤖 Agent action: {action}")
+        self.logs.append(("agent_action", action))
+
+    def on_agent_finish(self, finish, **kwargs: Any) -> Any:
+        print(f"\n✅ Agent finished: {finish}")
+        self.logs.append(("agent_finish", finish))
 
 def create_agent(api_key: str):
     """
@@ -109,7 +146,12 @@ def query_agent(agent, query: str) -> str:
         str: Response from the agent
     """
     try:
-        response = agent.run(query)
+        callback = LoggingCallbackHandler()
+        response = agent.run(query, callbacks=[callback])
+        print("\n📝 Full interaction log:")
+        for log_type, log_content in callback.logs:
+            print(f"{log_type}: {log_content}")
         return response
     except Exception as e:
+        print(f"\n❌ Error: {str(e)}")
         return f"Error processing query: {str(e)}"

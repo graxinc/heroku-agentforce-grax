@@ -14,3 +14,8 @@ python-dotenv>=1.0.0
 langchain-openai
 anthropic
 langchain-anthropic
+flask-login
+flask-sqlalchemy
+requests
+oauthlib
+pyOpenSSL

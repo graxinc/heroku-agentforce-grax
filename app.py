@@ -9,27 +9,6 @@ Key Features:
 - Implements HTTP Basic Authentication to protect the `/query` endpoint.
 - Utilizes Flask-RESTx for API documentation and validation.
 - Logs incoming requests and query activity for debugging purposes.
-
-Classes:
-    AgentRequest: Represents an agent request containing a query.
-    AgentResponse: Represents a response to the agent with a message.
-
-Endpoints:
-    POST /process:
-        - Input: JSON payload containing a `query` field.
-        - Output: JSON payload containing a response.
-
-Usage:
-    - Run the application with `python <filename>.py`.
-    - The server listens on the port specified in the `PORT` environment variable or defaults to 5000.
-    - Use an HTTP client (e.g., Postman, curl) to interact with the `/query` endpoint.
-
-Dependencies:
-    - Flask
-    - Flask-RESTx
-    - Flask-HTTPAuth
-    - Werkzeug (for password hashing)
-    - badgecreator (external module for badge generation)
 """
 import logging
 import os
@@ -41,7 +20,6 @@ from flask_httpauth import HTTPBasicAuth
 from flask_restx import Api, Resource, fields
 from werkzeug.security import generate_password_hash, check_password_hash
 from agent import create_agent, query_agent
-
 
 app = Flask(__name__)
 api = Api(app,
@@ -57,7 +35,6 @@ users = {
     "heroku": generate_password_hash("agent")
 }
 
-# Verify the username and password
 @auth.verify_password
 def verify_password(username, password):
     """
@@ -76,9 +53,6 @@ def verify_password(username, password):
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Load environment variables from .env file if it exists
-load_dotenv()
 
 class AgentRequest:
     """
@@ -126,21 +100,19 @@ agent_response_model = api.model('AgentResponse', {
     )
 })
 
-# API Routes
 @api.route('/query')
 class Process(Resource):
     """
     RESTful resource for processing agent requests and returning a response.
     """
 
-    @auth.login_required  # Protect the endpoint with HTTP Basic Auth
-    @api.expect(agent_request_model)  # Use the model here
-    @api.response(200, 'Success', agent_response_model)  # Define the response model here
+    @auth.login_required
+    @api.expect(agent_request_model)
+    @api.response(200, 'Success', agent_response_model)
     def post(self):
         """
         Handles POST requests to process an agent request.
         """
-        # Parse the JSON data from the request body
         data = request.json
         if not data or 'query' not in data:
             response = make_response(jsonify({"error": "Invalid request, 'query' field is required"}))
@@ -148,12 +120,10 @@ class Process(Resource):
             response.headers['Content-Type'] = 'application/json'
             return response
 
-        # Create MyRequest instance from JSON data
         agent_request = AgentRequest(data['query'])
         logger.info("Received query: %s", agent_request.query)
 
         try:
-            # Create and use the agent
             api_key = os.getenv('ANTHROPIC_API_KEY')
             if not api_key:
                 logger.error("API_KEY environment variable is not set")
@@ -180,6 +150,5 @@ if __name__ == '__main__':
     """
     Entry point for the application. Starts the Flask server and runs the application.
     """
-    # Use the PORT environment variable if present, otherwise default to 5001
     port = int(os.environ.get('PORT', 5001))
     app.run(debug=True, host='0.0.0.0', port=port)

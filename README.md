@@ -22,6 +22,14 @@ OPENAI_API_KEY=          # Your OpenAI API key for GPT-4 access
 
 # Optional
 PORT=5001                # Server port (default: 5001)
+
+# Google OAuth
+GOOGLE_CLIENT_ID=        # Google OAuth client ID
+GOOGLE_CLIENT_SECRET=    # Google OAuth client secret
+SECRET_KEY=             # Flask secret key for sessions
+
+# Database
+DATABASE_URL=           # Database URL (default: sqlite:///app.db)
 ```
 
 ### Installation
