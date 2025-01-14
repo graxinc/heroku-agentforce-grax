@@ -17,8 +17,8 @@ AWS_REGION=              # AWS region (e.g. us-east-1)
 S3_STAGING_DIR=          # S3 location for query results
 AWS_WORKGROUP=primary    # Athena workgroup (default: primary)
 
-# OpenAI API
-OPENAI_API_KEY=          # Your OpenAI API key for GPT-4 access
+# Claude API
+ANTHROPIC_API_KEY=          # Your Anthropic API key for LLM access
 
 # Optional
 PORT=5001                # Server port (default: 5001)
