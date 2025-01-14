@@ -6,7 +6,16 @@
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold mb-8">Agent Interactions</h1>
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold">Agent Interactions</h1>
+            <div class="text-sm text-gray-600">
+                {% if user_email %}
+                    Logged in as {{ user_email }}
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="text-indigo-600 hover:text-indigo-800">Login</a>
+                {% endif %}
+            </div>
+        </div>
 
         <div class="space-y-4">
             {% for interaction in interactions %}
