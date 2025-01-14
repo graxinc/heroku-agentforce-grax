@@ -1,27 +1,44 @@
 from langchain.agents import initialize_agent, Tool
 from langchain.agents import AgentType
-from langchain_community.chat_models import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain.tools import BaseTool
-from typing import Optional, Type, Any
+from typing import Optional, Type, Any, Dict, List
 import pandas as pd
 from datalake import query
+from langchain.callbacks.base import BaseCallbackHandler
 
 class DataLakeQueryTool(BaseTool):
     name: str = "datalake_query"
     description: str = """
     Useful for querying the GRAX data lake using SQL. Input should be a valid SQL query.
     The query will be executed against an Athena database containing Salesforce data.
-    Common tables include Account, Contact, Opportunity, and other Salesforce objects.
     Use this tool when you need to retrieve data from the data lake.
+
+    List table names to see the available tables.
+    The datalake contains historical data tables that begin with object_ and then the object name, such as object_account
+
+    Use a common table expression to get the latest data, for example:
+
+    SELECT A.*
+    FROM
+    (datalake.object_lead A
+    INNER JOIN (
+    SELECT
+        B.Id
+    , Max(B.grax__idseq) Latest
+    FROM
+        datalake.object_lead B
+    GROUP BY B.ID
+    )  B ON ((A.Id = B.Id) AND (A.grax__idseq = B.Latest)))
+    WHERE (A.grax__deleted IS NULL)
+
+    to get the latest data for the lead object.
+    Use this technique for any object that has a grax__idseq column.
+    Do not use sql code block markers in your query.
     """
 
     def _run(self, sql_query: str) -> str:
         try:
-            # Basic SQL injection prevention
-            dangerous_keywords = ['DROP', 'DELETE', 'TRUNCATE', 'UPDATE', 'INSERT']
-            if any(keyword in sql_query.upper() for keyword in dangerous_keywords):
-                return "This query type is not allowed for safety reasons."
-
             df = query(sql_query)
 
             if len(df) == 0:
@@ -34,21 +51,94 @@ class DataLakeQueryTool(BaseTool):
     def _arun(self, query: str) -> str:
         raise NotImplementedError("Async not implemented")
 
-def create_agent(openai_api_key: str):
+class LoggingCallbackHandler(BaseCallbackHandler):
+    def __init__(self):
+        self.logs = []
+
+    def _format_content(self, content: Any) -> str:
+        """Format content to ensure it's JSON serializable"""
+        if hasattr(content, 'to_json'):
+            return content.to_json()
+        if hasattr(content, 'to_dict'):
+            return content.to_dict()
+        if isinstance(content, (list, tuple)):
+            return [self._format_content(item) for item in content]
+        if isinstance(content, dict):
+            return {k: self._format_content(v) for k, v in content.items()}
+        return str(content)
+
+    def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
+        print(f"\n🤔 LLM is thinking about: {prompts}")
+        self.logs.append({
+            "type": "llm_start",
+            "content": self._format_content(prompts)
+        })
+
+    def on_llm_end(self, response, **kwargs: Any) -> None:
+        print(f"\n💭 LLM responded: {response}")
+        self.logs.append({
+            "type": "llm_end",
+            "content": self._format_content(response)
+        })
+
+    def on_tool_start(self, serialized: Dict[str, Any], input_str: str, **kwargs: Any) -> None:
+        print(f"\n🔧 Using tool {serialized.get('name', 'unknown')} with input: {input_str}")
+        self.logs.append({
+            "type": "tool_start",
+            "tool": serialized.get('name', 'unknown'),
+            "content": self._format_content(input_str)
+        })
+
+    def on_tool_end(self, output: str, **kwargs: Any) -> None:
+        print(f"\n📊 Tool output: {output}")
+        self.logs.append({
+            "type": "tool_end",
+            "content": self._format_content(output)
+        })
+
+    def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
+        print(f"\n⛓️ Starting chain with: {inputs}")
+        self.logs.append({
+            "type": "chain_start",
+            "content": self._format_content(inputs)
+        })
+
+    def on_chain_end(self, outputs: Dict[str, Any], **kwargs: Any) -> None:
+        print(f"\n🔗 Chain finished with: {outputs}")
+        self.logs.append({
+            "type": "chain_end",
+            "content": self._format_content(outputs)
+        })
+
+    def on_agent_action(self, action, **kwargs: Any) -> Any:
+        print(f"\n🤖 Agent action: {action}")
+        self.logs.append({
+            "type": "agent_action",
+            "content": self._format_content(action)
+        })
+
+    def on_agent_finish(self, finish, **kwargs: Any) -> Any:
+        print(f"\n✅ Agent finished: {finish}")
+        self.logs.append({
+            "type": "agent_finish",
+            "content": self._format_content(finish)
+        })
+
+def create_agent(api_key: str):
     """
     Creates a LangChain agent with the DataLakeQueryTool
 
     Args:
-        openai_api_key (str): OpenAI API key for the language model
+        api_key (str): API key for the language model
 
     Returns:
         Agent: Initialized LangChain agent
     """
     # Initialize the language model
-    llm = ChatOpenAI(
+    llm = ChatAnthropic(
         temperature=0,
-        model_name="gpt-4",
-        openai_api_key=openai_api_key
+        model_name="claude-3-5-sonnet-20240620",
+        anthropic_api_key=api_key
     )
 
     # Create the datalake query tool
@@ -81,7 +171,7 @@ def create_agent(openai_api_key: str):
 
     return agent
 
-def query_agent(agent, query: str) -> str:
+def query_agent(agent, query: str) -> tuple[str, list]:
     """
     Use the agent to process a natural language query and get results from the data lake
 
@@ -90,10 +180,12 @@ def query_agent(agent, query: str) -> str:
         query: Natural language query string
 
     Returns:
-        str: Response from the agent
+        tuple[str, list]: (response, logs) where logs is a list of tuples (log_type, content)
     """
     try:
-        response = agent.run(query)
-        return response
+        callback = LoggingCallbackHandler()
+        response = agent.run(query, callbacks=[callback])
+        return response, callback.logs
     except Exception as e:
-        return f"Error processing query: {str(e)}"
+        print(f"\n❌ Error: {str(e)}")
+        return f"Error processing query: {str(e)}", []

@@ -9,39 +9,20 @@ Key Features:
 - Implements HTTP Basic Authentication to protect the `/query` endpoint.
 - Utilizes Flask-RESTx for API documentation and validation.
 - Logs incoming requests and query activity for debugging purposes.
-
-Classes:
-    AgentRequest: Represents an agent request containing a query.
-    AgentResponse: Represents a response to the agent with a message.
-
-Endpoints:
-    POST /process:
-        - Input: JSON payload containing a `query` field.
-        - Output: JSON payload containing a response.
-
-Usage:
-    - Run the application with `python <filename>.py`.
-    - The server listens on the port specified in the `PORT` environment variable or defaults to 5000.
-    - Use an HTTP client (e.g., Postman, curl) to interact with the `/query` endpoint.
-
-Dependencies:
-    - Flask
-    - Flask-RESTx
-    - Flask-HTTPAuth
-    - Werkzeug (for password hashing)
-    - badgecreator (external module for badge generation)
 """
 import logging
 import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, jsonify, request, make_response
+from flask import Flask, jsonify, request, make_response, render_template
 from flask_httpauth import HTTPBasicAuth
 from flask_restx import Api, Resource, fields
 from werkzeug.security import generate_password_hash, check_password_hash
 from agent import create_agent, query_agent
-
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
+from models import Base, Interaction
 
 app = Flask(__name__)
 api = Api(app,
@@ -57,7 +38,6 @@ users = {
     "heroku": generate_password_hash("agent")
 }
 
-# Verify the username and password
 @auth.verify_password
 def verify_password(username, password):
     """
@@ -76,9 +56,6 @@ def verify_password(username, password):
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Load environment variables from .env file if it exists
-load_dotenv()
 
 class AgentRequest:
     """
@@ -126,60 +103,97 @@ agent_response_model = api.model('AgentResponse', {
     )
 })
 
-# API Routes
+# Database setup
+db_url = os.environ.get("DATABASE_URL")
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+engine = create_engine(db_url)
+db_session = scoped_session(sessionmaker(bind=engine))
+Base.metadata.create_all(bind=engine)
+
 @api.route('/query')
 class Process(Resource):
     """
     RESTful resource for processing agent requests and returning a response.
     """
 
-    @auth.login_required  # Protect the endpoint with HTTP Basic Auth
-    @api.expect(agent_request_model)  # Use the model here
-    @api.response(200, 'Success', agent_response_model)  # Define the response model here
+    @auth.login_required
+    @api.expect(agent_request_model)
+    @api.response(200, 'Success', agent_response_model)
     def post(self):
         """
         Handles POST requests to process an agent request.
         """
-        # Parse the JSON data from the request body
         data = request.json
         if not data or 'query' not in data:
-            response = make_response(jsonify({"error": "Invalid request, 'query' field is required"}))
-            response.status_code = 400
-            response.headers['Content-Type'] = 'application/json'
-            return response
-
-        # Create MyRequest instance from JSON data
-        agent_request = AgentRequest(data['query'])
-        logger.info("Received query: %s", agent_request.query)
+            return make_response(jsonify({"error": "Invalid request"}), 400)
 
         try:
-            # Create and use the agent
-            openai_api_key = os.getenv('OPENAI_API_KEY')
-            if not openai_api_key:
-                logger.error("OPENAI_API_KEY environment variable is not set")
-                return make_response(
-                    jsonify({"error": "OpenAI API key not configured"}),
-                    500
-                )
+            agent = create_agent(os.getenv('ANTHROPIC_API_KEY'))
+            message, logs = query_agent(agent, data['query'])
 
-            agent = create_agent(openai_api_key)
-            message = query_agent(agent, agent_request.query)
-
-        except Exception as e:
-            logger.error("Error running query: %s", str(e))
-            return make_response(
-                jsonify({"error": f"Error running query: {str(e)}"}),
-                500
+            # Save the interaction
+            interaction = Interaction(
+                query=data['query'],
+                response=message,
+                logs=logs
             )
+            db_session.add(interaction)
+            db_session.commit()
 
-        agent_response = AgentResponse(message)
-        logger.info("Result is: %s", agent_response)
-        return agent_response.to_dict()
+            return AgentResponse(message).to_dict()
+        except Exception as e:
+            logger.error("Error: %s", str(e))
+            return make_response(jsonify({"error": str(e)}), 500)
+
+@app.route('/demo')
+def demo():
+    """Demo page showing a canned agent interaction"""
+    try:
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return "Error: API key not configured", 500
+
+        agent = create_agent(api_key)
+        demo_query = "Show me the top 5 accounts by revenue"
+        message, logs = query_agent(agent, demo_query)
+
+        return render_template('dashboard.html',
+                             query=demo_query,
+                             response=message,
+                             logs=logs)
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+
+# Add list view
+@app.route('/interactions')
+@auth.login_required
+def list_interactions():
+    interactions = db_session.query(Interaction)\
+        .order_by(Interaction.created_at.desc())\
+        .all()
+    return render_template('list.html', interactions=interactions)
+
+# Add detail view
+@app.route('/interactions/<int:id>')
+@auth.login_required
+def view_interaction(id):
+    interaction = db_session.query(Interaction).get(id)
+    if not interaction:
+        return "Not found", 404
+    return render_template('dashboard.html',
+                         query=interaction.query,
+                         response=interaction.response,
+                         logs=interaction.logs)
+
+# Cleanup
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db_session.remove()
 
 if __name__ == '__main__':
     """
     Entry point for the application. Starts the Flask server and runs the application.
     """
-    # Use the PORT environment variable if present, otherwise default to 5001
     port = int(os.environ.get('PORT', 5001))
     app.run(debug=True, host='0.0.0.0', port=port)
