@@ -174,8 +174,14 @@ def callback():
     userinfo_response = requests.get(uri, headers=headers, data=body)
 
     if userinfo_response.json().get("email_verified"):
+        email = userinfo_response.json()["email"]
+
+        # Check if email is from grax.com domain
+        if not email.endswith(os.getenv('GOOGLE_DOMAIN')):
+            return "Access restricted to @grax.com email addresses.", 403
+
         session['google_authenticated'] = True
-        session['user_email'] = userinfo_response.json()["email"]
+        session['user_email'] = email
         return redirect(url_for("list_interactions"))
     else:
         return "User email not verified by Google.", 400
