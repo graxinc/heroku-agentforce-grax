@@ -105,6 +105,8 @@ agent_response_model = api.model('AgentResponse', {
 
 # Database setup
 db_url = os.environ.get("DATABASE_URL")
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 engine = create_engine(db_url)
 db_session = scoped_session(sessionmaker(bind=engine))
 Base.metadata.create_all(bind=engine)
