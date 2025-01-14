@@ -136,27 +136,49 @@ client = WebApplicationClient(GOOGLE_CLIENT_ID)
 def is_google_authenticated():
     return 'google_authenticated' in session
 
+def get_google_provider_cfg():
+    return requests.get(GOOGLE_DISCOVERY_URL).json()
+
 @app.route("/login")
 def login():
-    google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
+    google_provider_cfg = get_google_provider_cfg()
     authorization_endpoint = google_provider_cfg["authorization_endpoint"]
+
+    # Get the request's base URL
+    if request.headers.get('X-Forwarded-Proto') == 'https':
+        # We're behind a proxy, likely Heroku
+        base_url = 'https://' + request.headers['Host']
+    else:
+        base_url = request.url_root.rstrip('/')
+
+    # Construct the callback URL
+    callback_url = base_url + '/login/callback'
+
     request_uri = client.prepare_request_uri(
         authorization_endpoint,
-        redirect_uri=request.base_url + "/callback",
+        redirect_uri=callback_url,
         scope=["openid", "email"],
     )
     return redirect(request_uri)
 
 @app.route("/login/callback")
 def callback():
+    # Get the request's base URL
+    if request.headers.get('X-Forwarded-Proto') == 'https':
+        base_url = 'https://' + request.headers['Host']
+    else:
+        base_url = request.url_root.rstrip('/')
+
+    callback_url = base_url + '/login/callback'
+
     code = request.args.get("code")
-    google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
+    google_provider_cfg = get_google_provider_cfg()
     token_endpoint = google_provider_cfg["token_endpoint"]
 
     token_url, headers, body = client.prepare_token_request(
         token_endpoint,
         authorization_response=request.url,
-        redirect_url=request.base_url,
+        redirect_url=callback_url,
         code=code,
     )
     token_response = requests.post(
