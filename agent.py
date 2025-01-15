@@ -124,6 +124,14 @@ class LoggingCallbackHandler(BaseCallbackHandler):
             "content": self._format_content(finish)
         })
 
+def get_salesforce_objects_description():
+    """Read the Salesforce objects description from the markdown file"""
+    try:
+        with open('text/salesforce_objects.md', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
 def create_agent(api_key: str):
     """
     Creates a LangChain agent with the DataLakeQueryTool
@@ -153,12 +161,20 @@ def create_agent(api_key: str):
         )
     ]
 
-    # Add system instructions
-    system_message = """You are a helpful data analyst assistant that helps users query a Salesforce data lake.
+    # Get Salesforce objects description
+    sf_objects_desc = get_salesforce_objects_description()
+
+    # Add system instructions with Salesforce objects context
+    system_message = f"""You are a helpful data analyst assistant that helps users query a Salesforce data lake.
     The data lake contains standard Salesforce objects like Account, Contact, Opportunity, etc.
     When users ask questions, convert them to SQL queries and use the datalake_query tool to get results.
     Always format your responses clearly and explain the results in a user-friendly way.
-    If you encounter errors, provide helpful explanations about what might have gone wrong."""
+    If you encounter errors, provide helpful explanations about what might have gone wrong.
+
+    Here is detailed information about the Salesforce objects in the data lake:
+
+    {sf_objects_desc}
+    """
 
     # Initialize the agent with system message
     agent = initialize_agent(
