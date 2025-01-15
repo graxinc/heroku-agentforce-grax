@@ -15,7 +15,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, jsonify, request, make_response, render_template
+from flask import Flask, jsonify, request, make_response, render_template, redirect, url_for, session
 from flask_httpauth import HTTPBasicAuth
 from flask_restx import Api, Resource, fields
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -23,12 +23,25 @@ from agent import create_agent, query_agent
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from models import Base, Interaction
+from flask_login import login_required
+from oauthlib.oauth2 import WebApplicationClient
+import requests
+import json
+from functools import wraps
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev")
+
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+# Move Swagger UI to /api/
 api = Api(app,
           title='GRAX Agentforce Action',
           description="GRAX Agentforce Action example",
-          version='0.1.0'
+          version='0.1.0',
+          doc='/api/'  # This moves Swagger UI to /api/
           )
 
 auth = HTTPBasicAuth()
@@ -111,6 +124,98 @@ engine = create_engine(db_url)
 db_session = scoped_session(sessionmaker(bind=engine))
 Base.metadata.create_all(bind=engine)
 
+# OAuth 2 client setup
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", None)
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", None)
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+
+# OAuth setup
+app.secret_key = os.environ.get("SECRET_KEY", "dev")
+client = WebApplicationClient(GOOGLE_CLIENT_ID)
+
+def is_google_authenticated():
+    return 'google_authenticated' in session
+
+def get_google_provider_cfg():
+    return requests.get(GOOGLE_DISCOVERY_URL).json()
+
+@app.route("/login")
+def login():
+    google_provider_cfg = get_google_provider_cfg()
+    authorization_endpoint = google_provider_cfg["authorization_endpoint"]
+
+    # Get the request's base URL
+    if request.headers.get('X-Forwarded-Proto') == 'https':
+        # We're behind a proxy, likely Heroku
+        base_url = 'https://' + request.headers['Host']
+    else:
+        base_url = request.url_root.rstrip('/')
+
+    # Construct the callback URL
+    callback_url = base_url + '/login/callback'
+
+    request_uri = client.prepare_request_uri(
+        authorization_endpoint,
+        redirect_uri=callback_url,
+        scope=["openid", "email"],
+    )
+    return redirect(request_uri)
+
+@app.route("/login/callback")
+def callback():
+    # Get the request's base URL
+    if request.headers.get('X-Forwarded-Proto') == 'https':
+        base_url = 'https://' + request.headers['Host']
+    else:
+        base_url = request.url_root.rstrip('/')
+
+    callback_url = base_url + '/login/callback'
+
+    code = request.args.get("code")
+    google_provider_cfg = get_google_provider_cfg()
+    token_endpoint = google_provider_cfg["token_endpoint"]
+
+    token_url, headers, body = client.prepare_token_request(
+        token_endpoint,
+        authorization_response=request.url,
+        redirect_url=callback_url,
+        code=code,
+    )
+    token_response = requests.post(
+        token_url,
+        headers=headers,
+        data=body,
+        auth=(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET),
+    )
+
+    client.parse_request_body_response(token_response.text)
+
+    # Get user info from Google
+    userinfo_endpoint = google_provider_cfg["userinfo_endpoint"]
+    uri, headers, body = client.add_token(userinfo_endpoint)
+    userinfo_response = requests.get(uri, headers=headers, data=body)
+
+    if userinfo_response.json().get("email_verified"):
+        email = userinfo_response.json()["email"]
+
+        # Check if email is from grax.com domain
+        if not email.endswith(os.getenv('GOOGLE_DOMAIN')):
+            return "Access restricted to @grax.com email addresses.", 403
+
+        session['google_authenticated'] = True
+        session['user_email'] = email
+        return redirect(url_for("list_interactions"))
+    else:
+        return "User email not verified by Google.", 400
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_google_authenticated():
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 @api.route('/query')
 class Process(Resource):
     """
@@ -165,18 +270,19 @@ def demo():
     except Exception as e:
         return f"Error: {str(e)}", 500
 
-# Add list view
+# Update the UI routes to use our simplified login_required
 @app.route('/interactions')
-@auth.login_required
+@login_required
 def list_interactions():
     interactions = db_session.query(Interaction)\
         .order_by(Interaction.created_at.desc())\
         .all()
-    return render_template('list.html', interactions=interactions)
+    return render_template('list.html',
+                         interactions=interactions,
+                         user_email=session.get('user_email'))
 
-# Add detail view
 @app.route('/interactions/<int:id>')
-@auth.login_required
+@login_required
 def view_interaction(id):
     interaction = db_session.query(Interaction).get(id)
     if not interaction:
@@ -184,12 +290,14 @@ def view_interaction(id):
     return render_template('dashboard.html',
                          query=interaction.query,
                          response=interaction.response,
-                         logs=interaction.logs)
+                         logs=interaction.logs,
+                         user_email=session.get('user_email'))
 
 # Cleanup
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db_session.remove()
+
 
 if __name__ == '__main__':
     """

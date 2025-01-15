@@ -25,6 +25,11 @@ PORT=5001                # Server port (default: 5001)
 
 # Database
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+
+# Google OAuth
+GOOGLE_CLIENT_ID=        # Google OAuth 2.0 Client ID
+GOOGLE_CLIENT_SECRET=    # Google OAuth 2.0 Client Secret
+SECRET_KEY=             # Flask secret key for sessions
 ```
 
 ### Installation
