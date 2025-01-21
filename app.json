@@ -22,8 +22,7 @@
     },
     "GOOGLE_DOMAIN": {
       "description": "Allowed Google domain for authentication (e.g., grax.com)",
-      "required": false,
-      "value": "grax.com"
+      "required": false
     },
     "SECRET_KEY": {
       "description": "Secret key for Flask sessions",
