@@ -3,6 +3,11 @@
 A Flask API service that enables natural language querying of Salesforce data in the GRAX data lake.
 The service uses LangChain and Claude to answer natural language questions from Agentforce about your current and historical Salesforce data.
 
+## Installation
+
+
+[![Deploy to Heroku](https://www.herokucdn.com/deploy/button.png)](https://www.heroku.com/deploy/?template=https://github.com/graxlabs/heroku-agentforce-grax/tree/main)
+
 ## Setup
 
 ### Environment Variables
