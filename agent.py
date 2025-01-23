@@ -141,18 +141,6 @@ def create_agent(api_key: str):
         anthropic_api_key=api_key
     )
 
-    # Create the datalake query tool
-    datalake_tool = DataLakeQueryTool()
-
-    # Create a list of tools
-    tools = [
-        Tool(
-            name="datalake_query",
-            func=datalake_tool._run,
-            description=datalake_tool.description
-        )
-    ]
-
     # Add system instructions
     system_message = """You are a helpful data analyst assistant that helps users query a Salesforce data lake.
     The data lake contains standard Salesforce objects like Account, Contact, Opportunity, etc.
@@ -162,7 +150,7 @@ def create_agent(api_key: str):
 
     # Initialize the agent with system message
     agent = initialize_agent(
-        tools,
+        [DataLakeQueryTool()],
         llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
         verbose=True,
