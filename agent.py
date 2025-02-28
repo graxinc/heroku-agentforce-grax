@@ -1,9 +1,8 @@
-from langchain.agents import initialize_agent, Tool
+from langchain.agents import initialize_agent
 from langchain.agents import AgentType
 from langchain_anthropic import ChatAnthropic
 from langchain.tools import BaseTool
-from typing import Optional, Type, Any, Dict, List
-import pandas as pd
+from typing import Any, Dict, List
 from datalake import query
 from langchain.callbacks.base import BaseCallbackHandler
 
