@@ -15,7 +15,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, jsonify, request, make_response, render_template, redirect, url_for, session
+from flask import Flask, jsonify, request, make_response, render_template, redirect, url_for, session, Response
 from flask_httpauth import HTTPBasicAuth
 from flask_restx import Api, Resource, fields
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -28,6 +28,7 @@ from oauthlib.oauth2 import WebApplicationClient
 import requests
 import json
 from functools import wraps
+import asyncio
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev")
@@ -225,7 +226,18 @@ class Process(Resource):
     @auth.login_required
     @api.expect(agent_request_model)
     @api.response(200, 'Success', agent_response_model)
-    def post(self):
+    async def post(self):
+        async def heartbeat(response):
+            while True:
+                await asyncio.sleep(20)
+                response.write(b' ')
+                await response.flush()
+
+        # Create streaming response
+        response = Response(mimetype='application/json')
+
+        # Start heartbeat task
+        heartbeat_task = asyncio.create_task(heartbeat(response))
         """
         Handles POST requests to process an agent request.
         """
@@ -235,7 +247,8 @@ class Process(Resource):
 
         try:
             agent = create_agent(os.getenv('ANTHROPIC_API_KEY'))
-            message, logs = query_agent(agent, data['query'])
+            query_task = asyncio.create_task(query_agent(agent, data['query']))
+            message, logs = await query_task
 
             # Save the interaction
             interaction = Interaction(
@@ -246,8 +259,10 @@ class Process(Resource):
             db_session.add(interaction)
             db_session.commit()
 
+            heartbeat_task.cancel()
             return AgentResponse(message).to_dict()
         except Exception as e:
+            heartbeat_task.cancel()
             logger.error("Error: %s", str(e))
             return make_response(jsonify({"error": str(e)}), 500)
 
